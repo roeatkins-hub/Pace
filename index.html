@@ -1,1 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>PACE</title>
 
+<!-- PWA Meta Tags -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PACE">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0A0A0A">
+<meta name="description" content="Run/Walk Interval Timer">
+
+<!-- PWA Manifest (inline via data URI) -->
+<link rel="manifest" href="data:application/manifest+json,{
+  %22name%22: %22PACE%22,
+  %22short_name%22: %22PACE%22,
+  %22description%22: %22Run/Walk Interval Timer%22,
+  %22start_url%22: %22.%22,
+  %22display%22: %22standalone%22,
+  %22background_color%22: %22%230A0A0A%22,
+  %22theme_color%22: %22%230A0A0A%22,
+  %22orientation%22: %22portrait%22,
+  %22icons%22: [
+    {%22src%22: %22data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==%22, %22sizes%22: %22512x512%22, %22type%22: %22image/png%22}
+  ]
+}">
+
+<!-- Apple Touch Icons will be injected by script below -->
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --run: #FF3D00;
+    --walk: #00E5FF;
+    --bg: #0A0A0A;
+    --surface: #141414;
+    --border: #2A2A2A;
+    --text: #F0F0F0;
+    --muted: #666;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 48px;
+    overflow-x: hidden;
+  }
+
+  /* Ambient glow background */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -40%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(255,61,0,0.08) 0%, transparent 70%);
+    pointer-events: none;
+    transition: background 1s ease;
+    z-index: 0;
+  }
+
+  body.walking::before {
+    background: radial-gradient(circle, rgba(0,229,255,0.08) 0%, transparent 70%);
+  }
+
+  .app {
+    width: 100%;
+    max-width: 420px;
+    position: relative;
+    z-index: 1;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 48px;
+    letter-spacing: 8px;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .logo span { color: var(--run); }
+
+  .tagline {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* Setup panel */
+  #setup-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .field-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  .field-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .field-label .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--run);
+    flex-shrink: 0;
+  }
+
+  .field-label .dot.walk { background: var(--walk); }
+  .field-label .dot.session { background: #FFD600; }
+
+  .time-inputs {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .time-unit {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .time-unit label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .time-unit input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    letter-spacing: 2px;
+    text-align: center;
+    padding: 8px 4px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+    -moz-appearance: textfield;
+  }
+
+  .time-unit input::-webkit-outer-spin-button,
+  .time-unit input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+  .time-unit input:focus { border-color: var(--run); }
+  .walk-group .time-unit input:focus { border-color: var(--walk); }
+  .session-group .time-unit input:focus { border-color: #FFD600; }
+
+  .colon {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    color: var(--muted);
+    padding-bottom: 2px;
+    margin-top: 22px;
+  }
+
+  .go-btn {
+    background: var(--run);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 6px;
+    padding: 20px;
+    width: 100%;
+    cursor: pointer;
+    transition: transform 0.1s, opacity 0.2s;
+    margin-top: 4px;
+  }
+
+  .go-btn:hover { opacity: 0.9; }
+  .go-btn:active { transform: scale(0.98); }
+
+  /* Timer panel */
+  #timer-panel {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  #timer-panel.active { display: flex; }
+
+  .phase-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    letter-spacing: 8px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    transition: color 0.5s;
+  }
+
+  .phase-label.run { color: var(--run); }
+  .phase-label.walk { color: var(--walk); }
+
+  /* Big ring */
+  .ring-container {
+    position: relative;
+    width: 280px;
+    height: 280px;
+    margin: 8px 0;
+  }
+
+  .ring-svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .ring-track {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 8;
+  }
+
+  .ring-progress {
+    fill: none;
+    stroke: var(--run);
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-dasharray: 754;
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 0.5s linear, stroke 0.5s ease;
+  }
+
+  .ring-progress.walk { stroke: var(--walk); }
+
+  .ring-inner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+
+  .countdown {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 88px;
+    line-height: 1;
+    letter-spacing: -2px;
+    color: var(--text);
+  }
+
+  .countdown-unit {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* Stats row */
+  .stats-row {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    margin: 16px 0;
+  }
+
+  .stat-chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    flex: 1;
+    text-align: center;
+  }
+
+  .stat-chip .val {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 2px;
+    line-height: 1;
+  }
+
+  .stat-chip .lbl {
+    font-size: 8px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* Session progress bar */
+  .session-bar-wrap {
+    width: 100%;
+    margin-bottom: 20px;
+  }
+
+  .session-bar-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .session-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .session-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--run), #FF8C00);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 1s linear;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .ctrl-btn {
+    flex: 1;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 4px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+
+  .ctrl-btn:active { transform: scale(0.97); }
+  .ctrl-btn.primary { background: var(--run); border-color: var(--run); }
+
+  /* Halfway flash */
+  .halfway-flash {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.8);
+    background: rgba(255, 214, 0, 0.95);
+    color: #0A0A0A;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    letter-spacing: 4px;
+    padding: 20px 36px;
+    border-radius: 16px;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+    z-index: 100;
+    text-align: center;
+  }
+
+  .halfway-flash.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  /* Done banner */
+  #done-banner {
+    display: none;
+    margin-top: 20px;
+    background: linear-gradient(135deg, #1a1a1a, #141414);
+    border: 1px solid #FFD600;
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    width: 100%;
+  }
+
+  #done-banner .done-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    letter-spacing: 6px;
+    color: #FFD600;
+  }
+
+  #done-banner .done-sub {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+</style>
+</head>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>PACE</title>
+
+<!-- PWA Meta Tags -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PACE">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0A0A0A">
+<meta name="description" content="Run/Walk Interval Timer">
+
+<!-- PWA Manifest (inline via data URI) -->
+<link rel="manifest" href="data:application/manifest+json,{
+  %22name%22: %22PACE%22,
+  %22short_name%22: %22PACE%22,
+  %22description%22: %22Run/Walk Interval Timer%22,
+  %22start_url%22: %22.%22,
+  %22display%22: %22standalone%22,
+  %22background_color%22: %22%230A0A0A%22,
+  %22theme_color%22: %22%230A0A0A%22,
+  %22orientation%22: %22portrait%22,
+  %22icons%22: [
+    {%22src%22: %22data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==%22, %22sizes%22: %22512x512%22, %22type%22: %22image/png%22}
+  ]
+}">
+
+<!-- Apple Touch Icons will be injected by script below -->
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --run: #FF3D00;
+    --walk: #00E5FF;
+    --bg: #0A0A0A;
+    --surface: #141414;
+    --border: #2A2A2A;
+    --text: #F0F0F0;
+    --muted: #666;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 48px;
+    overflow-x: hidden;
+  }
+
+  /* Ambient glow background */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -40%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(255,61,0,0.08) 0%, transparent 70%);
+    pointer-events: none;
+    transition: background 1s ease;
+    z-index: 0;
+  }
+
+  body.walking::before {
+    background: radial-gradient(circle, rgba(0,229,255,0.08) 0%, transparent 70%);
+  }
+
+  .app {
+    width: 100%;
+    max-width: 420px;
+    position: relative;
+    z-index: 1;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 48px;
+    letter-spacing: 8px;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .logo span { color: var(--run); }
+
+  .tagline {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* Setup panel */
+  #setup-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .field-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  .field-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .field-label .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--run);
+    flex-shrink: 0;
+  }
+
+  .field-label .dot.walk { background: var(--walk); }
+  .field-label .dot.session { background: #FFD600; }
+
+  .time-inputs {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .time-unit {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .time-unit label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .time-unit input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    letter-spacing: 2px;
+    text-align: center;
+    padding: 8px 4px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+    -moz-appearance: textfield;
+  }
+
+  .time-unit input::-webkit-outer-spin-button,
+  .time-unit input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+  .time-unit input:focus { border-color: var(--run); }
+  .walk-group .time-unit input:focus { border-color: var(--walk); }
+  .session-group .time-unit input:focus { border-color: #FFD600; }
+
+  .colon {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    color: var(--muted);
+    padding-bottom: 2px;
+    margin-top: 22px;
+  }
+
+  .go-btn {
+    background: var(--run);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 6px;
+    padding: 20px;
+    width: 100%;
+    cursor: pointer;
+    transition: transform 0.1s, opacity 0.2s;
+    margin-top: 4px;
+  }
+
+  .go-btn:hover { opacity: 0.9; }
+  .go-btn:active { transform: scale(0.98); }
+
+  /* Timer panel */
+  #timer-panel {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  #timer-panel.active { display: flex; }
+
+  .phase-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    letter-spacing: 8px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    transition: color 0.5s;
+  }
+
+  .phase-label.run { color: var(--run); }
+  .phase-label.walk { color: var(--walk); }
+
+  /* Big ring */
+  .ring-container {
+    position: relative;
+    width: 280px;
+    height: 280px;
+    margin: 8px 0;
+  }
+
+  .ring-svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .ring-track {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 8;
+  }
+
+  .ring-progress {
+    fill: none;
+    stroke: var(--run);
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-dasharray: 754;
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 0.5s linear, stroke 0.5s ease;
+  }
+
+  .ring-progress.walk { stroke: var(--walk); }
+
+  .ring-inner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+
+  .countdown {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 88px;
+    line-height: 1;
+    letter-spacing: -2px;
+    color: var(--text);
+  }
+
+  .countdown-unit {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* Stats row */
+  .stats-row {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    margin: 16px 0;
+  }
+
+  .stat-chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    flex: 1;
+    text-align: center;
+  }
+
+  .stat-chip .val {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 2px;
+    line-height: 1;
+  }
+
+  .stat-chip .lbl {
+    font-size: 8px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* Session progress bar */
+  .session-bar-wrap {
+    width: 100%;
+    margin-bottom: 20px;
+  }
+
+  .session-bar-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .session-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .session-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--run), #FF8C00);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 1s linear;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .ctrl-btn {
+    flex: 1;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 4px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+
+  .ctrl-btn:active { transform: scale(0.97); }
+  .ctrl-btn.primary { background: var(--run); border-color: var(--run); }
+
+  /* Halfway flash */
+  .halfway-flash {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.8);
+    background: rgba(255, 214, 0, 0.95);
+    color: #0A0A0A;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    letter-spacing: 4px;
+    padding: 20px 36px;
+    border-radius: 16px;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+    z-index: 100;
+    text-align: center;
+  }
+
+  .halfway-flash.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  /* Done banner */
+  #done-banner {
+    display: none;
+    margin-top: 20px;
+    background: linear-gradient(135deg, #1a1a1a, #141414);
+    border: 1px solid #FFD600;
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    width: 100%;
+  }
+
+  #done-banner .done-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    letter-spacing: 6px;
+    color: #FFD600;
+  }
+
+  #done-banner .done-sub {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+</style>
+</head>
+// ── Start session ─────────────────────────────────────────────────────────────
+function startSession() {
+  const runM  = parseInt(document.getElementById('run-min').value)  || 0;
+  const runS  = parseInt(document.getElementById('run-sec').value)  || 0;
+  const walkM = parseInt(document.getElementById('walk-min').value) || 0;
+  const walkS = parseInt(document.getElementById('walk-sec').value) || 0;
+  const sesM  = parseInt(document.getElementById('session-min').value) || 0;
+  const sesS  = parseInt(document.getElementById('session-sec').value) || 0;
+
+  runSecs  = runM  * 60 + runS;
+  walkSecs = walkM * 60 + walkS;
+  totalSecs = sesM * 60 + sesS;
+
+  if (runSecs < 1 || walkSecs < 1 || totalSecs < 10) {
+    alert('Please set valid run, walk and session times.');
+    return;
+  }
+
+  // Init state
+  elapsed = 0; phaseElapsed = 0; round = 1;
+  paused = false; done = false; halfwayTriggered = false;
+  _pendingSpeech = null;
+
+  // Show timer panel
+  document.getElementById('setup-panel').style.display = 'none';
+  document.getElementById('timer-panel').classList.add('active');
+  document.getElementById('done-banner').style.display = 'none';
+  document.getElementById('pause-btn').textContent = 'Pause';
+
+  // Start audio keep-alive (must follow user gesture)
+  startAudioFocusKeepAlive();
+
+  // Start in run phase
+  startPhase('run');
+
+  // Delayed first cue so beep doesn't clash
+  setTimeout(() => speak('Start Running!'), 800);
+
+  // Wall-clock anchor
+  startWallTime = Date.now();
+  elapsedAtStart = 0;
+
+  intervalId = setInterval(tick, 250);
+}
+
+function startPhase(phase) {
+  currentPhase = phase;
+  phaseElapsed = 0;
+  phaseDuration = phase === 'run' ? runSecs : walkSecs;
+
+  const label = document.getElementById('phase-label');
+  const ring  = document.getElementById('ring');
+  const chip  = document.getElementById('chip-phase');
+  const next  = document.getElementById('chip-next');
+
+  if (phase === 'run') {
+    label.textContent = 'RUN';
+    label.className = 'phase-label run';
+    ring.className = 'ring-progress';
+    chip.textContent = 'RUN';
+    chip.style.color = 'var(--run)';
+    next.textContent = 'WALK';
+    document.body.classList.remove('walking');
+    playRunCue();
+  } else {
+    label.textContent = 'WALK';
+    label.className = 'phase-label walk';
+    ring.className = 'ring-progress walk';
+    chip.textContent = 'WALK';
+    chip.style.color = 'var(--walk)';
+    next.textContent = 'RUN';
+    document.body.classList.add('walking');
+    playWalkCue();
+  }
+
+  updateRing(0);
+}
+
+function updateRing(fraction) {
+  const offset = CIRCUMFERENCE * (1 - fraction);
+  document.getElementById('ring').style.strokeDashoffset = offset;
+}
+
+function tick() {
+  if (paused || done) return;
+
+  const newElapsed = elapsedAtStart + Math.floor((Date.now() - startWallTime) / 1000);
+  if (newElapsed === elapsed) return;
+
+  while (elapsed < newElapsed && !done) {
+    elapsed++;
+    phaseElapsed++;
+
+    const half = Math.floor(totalSecs / 2);
+    if (!halfwayTriggered && elapsed >= half) {
+      halfwayTriggered = true;
+      speak('Halfway there! Keep it up!');
+      showHalfwayFlash();
+    }
+
+    if (elapsed >= totalSecs) {
+      finishSession();
+      return;
+    }
+
+    if (phaseElapsed >= phaseDuration) {
+      if (currentPhase === 'run') {
+        startPhase('walk');
+        speak('Start Walking!');
+      } else {
+        round++;
+        document.getElementById('chip-round').textContent = round;
+        startPhase('run');
+        speak('Start Running!');
+      }
+    }
+  }
+
+  const remaining = phaseDuration - phaseElapsed;
+  const countdownEl = document.getElementById('countdown');
+  const unitEl = document.getElementById('countdown-unit');
+
+  if (remaining >= 60) {
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    countdownEl.textContent = `${m}:${pad(s)}`;
+    unitEl.textContent = 'MIN : SEC';
+  } else {
+    countdownEl.textContent = remaining;
+    unitEl.textContent = 'SECONDS';
+  }
+
+  updateRing(phaseElapsed / phaseDuration);
+
+  const sessionRemaining = totalSecs - elapsed;
+  document.getElementById('session-time-left').textContent = fmtTime(sessionRemaining);
+  document.getElementById('session-fill').style.width = ((elapsed / totalSecs) * 100) + '%';
+}
+
+function showHalfwayFlash() {
+  const el = document.getElementById('halfway-flash');
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+function finishSession() {
+  done = true;
+  clearInterval(intervalId);
+  document.getElementById('phase-label').textContent = 'DONE!';
+  document.getElementById('phase-label').className = 'phase-label';
+  document.getElementById('countdown').textContent = '0';
+  document.getElementById('session-fill').style.width = '100%';
+  document.getElementById('session-time-left').textContent = '00:00';
+  document.getElementById('done-banner').style.display = 'block';
+  document.body.classList.remove('walking');
+  playDoneCue();
+  speak('Session complete! Smashing it Ruth!');
+  setTimeout(() => { stopAudioFocusKeepAlive(); _pendingSpeech = null; }, 8000);
+}
+
+function togglePause() {
+  if (done) return;
+  paused = !paused;
+  if (paused) {
+    pausedAt = Date.now();
+  } else {
+    startWallTime += (Date.now() - pausedAt);
+    pausedAt = null;
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    startAudioFocusKeepAlive();
+  }
+  document.getElementById('pause-btn').textContent = paused ? 'Resume' : 'Pause';
+}
+
+function resetSession() {
+  clearInterval(intervalId);
+  done = true;
+  document.getElementById('timer-panel').style.display = 'none';
+  document.getElementById('timer-panel').classList.remove('active');
+  document.getElementById('setup-panel').style.display = 'flex';
+  document.getElementById('done-banner').style.display = 'none';
+  document.body.classList.remove('walking');
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  stopAudioFocusKeepAlive();
+  _pendingSpeech = null;
+}
+
+// ── Page Visibility ───────────────────────────────────────────────────────────
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    if (!done && !paused) _registerMediaSession();
+    if (_pendingSpeech && !done && !paused) {
+      setTimeout(() => { if (_pendingSpeech) _doSpeak(_pendingSpeech); }, 300);
+    }
+  }
+});
+
+// ── Pre-load voices ───────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  if (window.speechSynthesis) {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+  }
+  generateAndSetIcon();
+  registerServiceWorker();
+  showInstallBanner();
+});
+
+// ── PWA Icon ──────────────────────────────────────────────────────────────────
+function generateAndSetIcon() {
+  const size = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#0A0A0A';
+  ctx.beginPath();
+  ctx.roundRect(0, 0, size, size, 80);
+  ctx.fill();
+  const cx = size/2, cy = size/2, r = 190, stroke = 28;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.strokeStyle = '#2A2A2A';
+  ctx.lineWidth = stroke;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, -Math.PI/2, -Math.PI/2 + Math.PI*1.5);
+  ctx.strokeStyle = '#FF3D00';
+  ctx.lineWidth = stroke;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.fillStyle = '#F0F0F0';
+  ctx.font = 'bold 130px Arial Black, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('PACE', cx, cy + 6);
+  const dataURL = c.toDataURL('image/png');
+  ['180x180','152x152','120x120'].forEach(sz => {
+    const link = document.createElement('link');
+    link.rel = 'apple-touch-icon';
+    link.sizes = sz;
+    link.href = dataURL;
+    document.head.appendChild(link);
+  });
+  const iconLink = document.createElement('link');
+  iconLink.rel = 'icon';
+  iconLink.type = 'image/png';
+  iconLink.href = dataURL;
+  document.head.appendChild(iconLink);
+}
+
+// ── Service Worker ────────────────────────────────────────────────────────────
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  const swCode = `
+    const CACHE = 'pace-v1';
+    const FONTS = ['https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap'];
+    self.addEventListener('install', e => {
+      e.waitUntil(caches.open(CACHE).then(c => c.addAll(FONTS).catch(() => {})));
+      self.skipWaiting();
+    });
+    self.addEventListener('activate', e => {
+      e.waitUntil(caches.keys().then(keys =>
+        Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      ));
+      self.clients.claim();
+    });
+    self.addEventListener('fetch', e => {
+      e.respondWith(
+        caches.match(e.request).then(r => r || fetch(e.request).catch(() =>
+          new Response('', {status: 408})
+        ))
+      );
+    });
+  `;
+  const blob = new Blob([swCode], {type: 'application/javascript'});
+  navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
+}
+
+// ── Install Banner ────────────────────────────────────────────────────────────
+function showInstallBanner() {
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+  if (isStandalone) return;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isAndroid = /android/i.test(navigator.userAgent);
+  if (!isIOS && !isAndroid) return;
+  const banner = document.createElement('div');
+  banner.style.cssText = `position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#141414;border-top:1px solid #2A2A2A;padding:16px 20px 28px;display:flex;align-items:center;gap:14px;font-family:'DM Mono',monospace;`;
+  const icon = document.createElement('div');
+  icon.style.cssText = `width:48px;height:48px;border-radius:12px;background:#FF3D00;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:#fff;`;
+  icon.textContent = 'PACE';
+  const text = document.createElement('div');
+  text.style.flex = '1';
+  text.innerHTML = isIOS
+    ? `<div style="font-size:12px;color:#F0F0F0;letter-spacing:1px;margin-bottom:4px;">ADD TO HOME SCREEN</div><div style="font-size:10px;color:#666;letter-spacing:1px;">Tap <strong style="color:#FF3D00">Share ↑</strong> then <strong style="color:#FF3D00">"Add to Home Screen"</strong></div>`
+    : `<div style="font-size:12px;color:#F0F0F0;letter-spacing:1px;margin-bottom:4px;">ADD TO HOME SCREEN</div><div style="font-size:10px;color:#666;letter-spacing:1px;">Tap <strong style="color:#FF3D00">⋮ menu</strong> → <strong style="color:#FF3D00">"Add to Home Screen"</strong></div>`;
+  const close = document.createElement('button');
+  close.textContent = '✕';
+  close.style.cssText = `background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:4px 8px;flex-shrink:0;`;
+  close.onclick = () => banner.remove();
+  banner.appendChild(icon);
+  banner.appendChild(text);
+  banner.appendChild(close);
+  document.body.appendChild(banner);
+}
+</script>
+</body>
+  </html>
